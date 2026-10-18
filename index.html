@@ -51,7 +51,7 @@ function show(id, btn) {
 function renderProducts(){let q=(document.getElementById('search').value||'').toLowerCase();let list=products.filter(x=>(x.n+' '+x.c+' '+x.v).toLowerCase().includes(q));document.getElementById('products').innerHTML=list.map(x=>`<div class="card"><div class="emoji">${x.e||'📦'}</div><span class="cat">${x.c}</span><h3>${x.n}</h3><div class="muted">Venta por ${x.u} · Precio PeraCo</div><div class="price">${money(x.p)}</div><button class="btn" onclick="add('${x.id}')">Agregar</button></div>`).join('')||'<div class="empty">No encontramos ese producto.</div>'}
 function add(id){cart[id]=(cart[id]||0)+1;save();toast('Producto agregado al carrito')}
 function updateCart(){let n=Object.values(cart).reduce((a,b)=>a+b,0);document.getElementById('cartCount').textContent=n}
-function cartRows(){return Object.entries(cart).filter(([id,q])=>q>0).map(([id,q])=>{let x=products.find(p=>p.id==id);return {x,q,sub:x.p*q}})}
+function cartRows(){return Object.entries(cart).filter(([id,q])=>q>0).map(([id,q])=>{const x=products.find(p=>String(p.id)===String(id));return x?{x,q,sub:Number(x.p)*Number(q)}:null}).filter(Boolean)}
 
 async function openCart() {
   const rows = cartRows();
@@ -277,29 +277,31 @@ async function loadOrdersFromSupabase() {
   
 
 
+function estadoPedidoVisible(estado) {
+  const labels = {
+    draft: 'Pendiente de confirmación',
+    pending: 'Pendiente de confirmación',
+    Pendiente: 'Pendiente de confirmación',
+    confirmed: 'Confirmado',
+    Aceptado: 'Confirmado',
+    preparing: 'En preparación',
+    Preparado: 'En preparación',
+    delivered: 'Entregado',
+    Entregado: 'Entregado',
+    cancelled: 'Cancelado',
+    Finalizado: 'Finalizado'
+  };
+  return labels[estado] || estado || 'Sin estado';
+}
+
 function renderProvider() {
   const container = document.getElementById('providerList');
   if (!container) return;
 
   if (!orders.length) {
-    container.innerHTML =
-      '<div class="empty">No hay pedidos registrados.</div>';
+    container.innerHTML = '<div class="empty">No hay pedidos registrados en Supabase.</div>';
     return;
   }
-
-  const estadoVisible = estado => ({
-    draft: 'Pendiente de confirmación',
-    pending: 'Pendiente de confirmación',
-    Pendiente: 'Pendiente de confirmación',
-    confirmed: 'Confirmado',
-    Aceptado: 'Aceptado',
-    preparing: 'En preparación',
-    Preparado: 'Preparado',
-    delivered: 'Entregado',
-    Entregado: 'Entregado',
-    cancelled: 'Cancelado',
-    Finalizado: 'Finalizado'
-  })[estado] || estado;
 
   const siguienteEstado = {
     draft: 'confirmed',
@@ -315,8 +317,8 @@ function renderProvider() {
     draft: 'Confirmar pedido',
     pending: 'Confirmar pedido',
     Pendiente: 'Confirmar pedido',
-    confirmed: 'Marcar preparado',
-    Aceptado: 'Marcar preparado',
+    confirmed: 'Marcar en preparación',
+    Aceptado: 'Marcar en preparación',
     preparing: 'Marcar entregado',
     Preparado: 'Marcar entregado'
   };
@@ -324,28 +326,22 @@ function renderProvider() {
   container.innerHTML =
     '<table class="table">' +
     '<tr><th>Pedido</th><th>Productos</th><th>Total</th><th>Estado</th><th>Acción</th></tr>' +
-    orders.map((o, i) => {
-      const puedeAvanzar = Boolean(siguienteEstado[o.status]);
+    orders.map((pedido, index) => {
+      const puedeAvanzar = Boolean(siguienteEstado[pedido.status]);
+      const productos = (pedido.items || []).map(item =>
+        `${item.q} ${item.x.u} ${item.x.n}`
+      ).join('<br>');
 
       return `
         <tr>
+          <td><b>${pedido.id}</b><br><span class="small">${pedido.date}</span></td>
+          <td>${productos}</td>
+          <td>${money(pedido.total)}</td>
+          <td><span class="status">${estadoPedidoVisible(pedido.status)}</span></td>
           <td>
-            <b>${o.id}</b><br>
-            <span class="small">${o.date}</span>
-          </td>
-          <td>
-            ${o.items.map(r =>
-              `${r.q} ${r.x.u} ${r.x.n}`
-            ).join('<br>')}
-          </td>
-          <td>${money(o.total)}</td>
-          <td><span class="status">${estadoVisible(o.status)}</span></td>
-          <td>
-            ${
-              puedeAvanzar
-                ? `<button class="btn" onclick="advance(${i})">${textoBoton[o.status]}</button>`
-                : estadoVisible(o.status)
-            }
+            ${puedeAvanzar
+              ? `<button class="btn" onclick="advance(${index})">${textoBoton[pedido.status]}</button>`
+              : estadoPedidoVisible(pedido.status)}
           </td>
         </tr>
       `;
@@ -353,24 +349,68 @@ function renderProvider() {
     '</table>';
 }
 
-  
+async function advance(index) {
+  const pedido = orders[index];
 
-    const result = await response.json();
+  if (!pedido) {
+    alert('No se encontró el pedido. Actualiza la página e inténtalo de nuevo.');
+    return;
+  }
+
+  const transiciones = {
+    draft: 'confirmed',
+    pending: 'confirmed',
+    Pendiente: 'confirmed',
+    confirmed: 'preparing',
+    Aceptado: 'preparing',
+    preparing: 'delivered',
+    Preparado: 'delivered'
+  };
+
+  const nuevoEstado = transiciones[pedido.status];
+  if (!nuevoEstado) {
+    alert('Este pedido ya no tiene acciones disponibles.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${PERACO_SUPABASE_URL.replace(/\/$/, '')}/functions/v1/actualizar-estado-pedido`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': PERACO_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${PERACO_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          restaurant_code: 'RES-DEMO-001',
+          order_code: pedido.id,
+          status: nuevoEstado
+        })
+      }
+    );
+
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      result = { ok: false, error: 'La función devolvió una respuesta no válida.' };
+    }
 
     if (!response.ok || result.ok !== true) {
-      console.error('Error actualizando pedido:', result);
+      console.error('Error actualizando pedido:', response.status, result);
       alert(result.error || 'No se pudo actualizar el pedido en Supabase.');
       return;
     }
 
-    pedido.status = result.status;
+    // Volver a consultar la base de datos para mostrar el estado persistido.
+    await loadOrdersFromSupabase();
     renderProvider();
-    renderOrders();
-
-    alert(`Pedido actualizado: ${estadosAnteriores[result.status] || result.status}.`);
+    alert(`Pedido actualizado: ${estadoPedidoVisible(result.status)}.`);
   } catch (error) {
-    console.error('Error de conexión:', error);
-    alert('No se pudo conectar con Supabase. El estado no se actualizará localmente.');
+    console.error('Error de conexión actualizando pedido:', error);
+    alert('No se pudo conectar con Supabase. El estado no se cambió.');
   }
 }
 
@@ -401,5 +441,6 @@ async function loadPublicCatalog(){
   }
 }
 function emojiFor(name){const n=(name||'').toLowerCase();if(n.includes('papa'))return '🥔';if(n.includes('tomate'))return '🍅';if(n.includes('cebolla'))return '🧅';if(n.includes('zanahoria'))return '🥕';if(n.includes('plátano')||n.includes('platano'))return '🍌';if(n.includes('banano'))return '🍌';if(n.includes('huevo'))return '🥚';if(n.includes('pollo'))return '🍗';if(n.includes('leche'))return '🥛';if(n.includes('queso'))return '🧀';return '📦';}
+renderProducts(); updateCart();
 loadPublicCatalog();
 </script><footer class="footer">PeraCo MVP · Sistema de compras para restaurantes y plazas de mercado</footer></body></html>
