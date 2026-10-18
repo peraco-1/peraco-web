@@ -40,8 +40,8 @@ function show(id, btn) {
   }
 
   if (id === 'provider') {
-    renderProvider();
-  }
+  loadOrdersFromSupabase().then(() => renderProvider());
+}
 
   if (id === 'admin') {
     renderAdmin();
