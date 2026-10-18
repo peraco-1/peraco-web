@@ -142,7 +142,44 @@ async function openCart() {
     alert('No se pudo conectar con Supabase. El carrito se conserva y no se enviará el pedido por WhatsApp.');
   }
 }
-function renderOrders(){if(!orders.length){document.getElementById('orderList').innerHTML='<div class="empty">Aún no tienes pedidos.</div>';return}document.getElementById('orderList').innerHTML='<div class="grid">'+orders.map(o=>`<div class="card"><div class="row"><b>${o.id}</b><span class="status">${o.status}</span></div><p class="muted">${o.date}</p><b>${o.restaurant}</b><hr>${o.items.map(r=>`<div class="row"><span>${r.q} ${r.x.u} ${r.x.n}</span><b>${money(r.sub)}</b></div>`).join('')}<hr><div class="row"><b>Total</b><b>${money(o.total)}</b></div></div>`).join('')+'</div>'}
+
+function renderOrders() {
+  const container = document.getElementById('orderList');
+
+  if (!container) return;
+
+  if (!orders.length) {
+    container.innerHTML =
+      '<div class="empty">Aún no tienes pedidos registrados en Supabase.</div>';
+    return;
+  }
+
+  container.innerHTML =
+    '<div class="grid">' +
+    orders.map(o => `
+      <div class="card">
+        <div class="row">
+          <b>${o.id}</b>
+          <span class="status">${o.status}</span>
+        </div>
+        <p class="muted">${o.date}</p>
+        <b>${o.restaurant}</b>
+        <hr>
+        ${o.items.map(r => `
+          <div class="row">
+            <span>${r.q} ${r.x.u} ${r.x.n}</span>
+            <b>${money(r.sub)}</b>
+          </div>
+        `).join('')}
+        <hr>
+        <div class="row">
+          <b>Total</b>
+          <b>${money(o.total)}</b>
+        </div>
+      </div>
+    `).join('') +
+    '</div>';
+}
 
 
 async function loadOrdersFromSupabase() {
