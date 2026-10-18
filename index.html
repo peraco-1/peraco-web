@@ -276,6 +276,7 @@ async function loadOrdersFromSupabase() {
 
   
 
+
 function renderProvider() {
   const container = document.getElementById('providerList');
   if (!container) return;
@@ -300,74 +301,58 @@ function renderProvider() {
     Finalizado: 'Finalizado'
   })[estado] || estado;
 
+  const siguienteEstado = {
+    draft: 'confirmed',
+    pending: 'confirmed',
+    Pendiente: 'confirmed',
+    confirmed: 'preparing',
+    Aceptado: 'preparing',
+    preparing: 'delivered',
+    Preparado: 'delivered'
+  };
+
+  const textoBoton = {
+    draft: 'Confirmar pedido',
+    pending: 'Confirmar pedido',
+    Pendiente: 'Confirmar pedido',
+    confirmed: 'Marcar preparado',
+    Aceptado: 'Marcar preparado',
+    preparing: 'Marcar entregado',
+    Preparado: 'Marcar entregado'
+  };
+
   container.innerHTML =
     '<table class="table">' +
-    '<tr><th>Pedido</th><th>Productos</th><th>Total</th><th>Estado</th></tr>' +
-    orders.map(o => `
-      <tr>
-        <td>
-          <b>${o.id}</b><br>
-          <span class="small">${o.date}</span>
-        </td>
-        <td>
-          ${o.items.map(r =>
-            `${r.q} ${r.x.u} ${r.x.n}`
-          ).join('<br>')}
-        </td>
-        <td>${money(o.total)}</td>
-        <td><span class="status">${estadoVisible(o.status)}</span></td>
-      </tr>
-    `).join('') +
+    '<tr><th>Pedido</th><th>Productos</th><th>Total</th><th>Estado</th><th>Acción</th></tr>' +
+    orders.map((o, i) => {
+      const puedeAvanzar = Boolean(siguienteEstado[o.status]);
+
+      return `
+        <tr>
+          <td>
+            <b>${o.id}</b><br>
+            <span class="small">${o.date}</span>
+          </td>
+          <td>
+            ${o.items.map(r =>
+              `${r.q} ${r.x.u} ${r.x.n}`
+            ).join('<br>')}
+          </td>
+          <td>${money(o.total)}</td>
+          <td><span class="status">${estadoVisible(o.status)}</span></td>
+          <td>
+            ${
+              puedeAvanzar
+                ? `<button class="btn" onclick="advance(${i})">${textoBoton[o.status]}</button>`
+                : estadoVisible(o.status)
+            }
+          </td>
+        </tr>
+      `;
+    }).join('') +
     '</table>';
 }
 
-
-async function advance(i) {
-  const pedido = orders[i];
-
-  if (!pedido) {
-    alert('No se encontró el pedido.');
-    return;
-  }
-
-  const transiciones = {
-    draft: 'confirmed',
-    confirmed: 'preparing',
-    preparing: 'delivered'
-  };
-
-  const estadosAnteriores = {
-    draft: 'Pendiente',
-    confirmed: 'Aceptado',
-    preparing: 'Preparado',
-    delivered: 'Entregado',
-    cancelled: 'Cancelado'
-  };
-
-  const estadoActual = pedido.status;
-  const nuevoEstado = transiciones[estadoActual];
-
-  if (!nuevoEstado) {
-    alert('Este pedido no tiene una transición disponible.');
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${PERACO_SUPABASE_URL.replace(/\/$/, '')}/functions/v1/actualizar-estado-pedido`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': PERACO_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${PERACO_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          restaurant_code: 'RES-DEMO-001',
-          order_code: pedido.id,
-          status: nuevoEstado
-        })
-      }
     );
 
     const result = await response.json();
