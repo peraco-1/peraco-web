@@ -275,7 +275,52 @@ async function loadOrdersFromSupabase() {
 }
 
   
-function renderProvider(){document.getElementById('providerList').innerHTML=orders.length?'<table class="table"><tr><th>Pedido</th><th>Restaurante</th><th>Productos</th><th>Total</th><th>Estado</th><th>Acción</th></tr>'+orders.map((o,i)=>`<tr><td><b>${o.id}</b><br><span class="small">${o.date}</span></td><td>${o.restaurant}</td><td>${o.items.map(r=>r.q+' '+r.x.u+' '+r.x.n).join('<br>')}</td><td>${money(o.total)}</td><td><span class="status">${o.status}</span></td><td><button class="btn" onclick="advance(${i})">${o.status==='Pendiente'?'Aceptar':o.status==='Aceptado'?'Preparado':o.status==='Preparado'?'Entregado':'✓ Finalizado'}</button></td></tr>`).join('')+'</table>':'<div class="empty">No hay pedidos recibidos.</div>'}
+
+function renderProvider() {
+  const container = document.getElementById('providerList');
+  if (!container) return;
+
+  if (!orders.length) {
+    container.innerHTML =
+      '<div class="empty">No hay pedidos registrados.</div>';
+    return;
+  }
+
+  const estadoVisible = estado => ({
+    draft: 'Pendiente de confirmación',
+    pending: 'Pendiente de confirmación',
+    Pendiente: 'Pendiente de confirmación',
+    confirmed: 'Confirmado',
+    Aceptado: 'Aceptado',
+    preparing: 'En preparación',
+    Preparado: 'Preparado',
+    delivered: 'Entregado',
+    Entregado: 'Entregado',
+    cancelled: 'Cancelado',
+    Finalizado: 'Finalizado'
+  })[estado] || estado;
+
+  container.innerHTML =
+    '<table class="table">' +
+    '<tr><th>Pedido</th><th>Productos</th><th>Total</th><th>Estado</th></tr>' +
+    orders.map(o => `
+      <tr>
+        <td>
+          <b>${o.id}</b><br>
+          <span class="small">${o.date}</span>
+        </td>
+        <td>
+          ${o.items.map(r =>
+            `${r.q} ${r.x.u} ${r.x.n}`
+          ).join('<br>')}
+        </td>
+        <td>${money(o.total)}</td>
+        <td><span class="status">${estadoVisible(o.status)}</span></td>
+      </tr>
+    `).join('') +
+    '</table>';
+}
+
 function advance(i){let s=['Pendiente','Aceptado','Preparado','Entregado','Finalizado'];let k=s.indexOf(orders[i].status);if(k<s.length-1)orders[i].status=s[k+1];save();renderProvider()}
 function addProduct(){let n=document.getElementById('pn').value.trim(),c=document.getElementById('pc').value.trim()||'Otros',p=Number(document.getElementById('pp').value),u=document.getElementById('pu').value.trim()||'unidad',v='PeraCo',e=document.getElementById('pe').value.trim()||'📦';if(!n||!p){alert('Ingresa al menos nombre y precio.');return}products.push({id:Date.now(),n,c,p,u,v,e});save();['pn','pc','pp','pu','pe'].forEach(id=>document.getElementById(id).value='');renderAdmin();renderProducts()}
 function renderAdmin(){document.getElementById('adminProducts').innerHTML='<table class="table"><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Canal</th><th></th></tr>'+products.map((x,i)=>`<tr><td>${x.e||''} ${x.n}</td><td>${x.c}</td><td>${money(x.p)}/${x.u}</td><td>PeraCo</td><td><button class="btn danger" onclick="delProduct(${i})">Eliminar</button></td></tr>`).join('')+'</table>'}
