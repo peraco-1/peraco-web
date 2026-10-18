@@ -26,7 +26,122 @@ function renderProducts(){let q=(document.getElementById('search').value||'').to
 function add(id){cart[id]=(cart[id]||0)+1;save();toast('Producto agregado al carrito')}
 function updateCart(){let n=Object.values(cart).reduce((a,b)=>a+b,0);document.getElementById('cartCount').textContent=n}
 function cartRows(){return Object.entries(cart).filter(([id,q])=>q>0).map(([id,q])=>{let x=products.find(p=>p.id==id);return {x,q,sub:x.p*q}})}
-function openCart(){let rows=cartRows();if(!rows.length){alert('Tu carrito está vacío.');return}let total=rows.reduce((a,r)=>a+r.sub,0);let msg=rows.map(r=>`• ${r.q} ${r.x.u} ${r.x.n} — ${money(r.sub)}`).join('\n');let name=prompt('Nombre del restaurante:',localStorage.getItem('pc_restaurant')||'Restaurante de prueba');if(name===null)return;localStorage.setItem('pc_restaurant',name);let phone=localStorage.getItem('pc_peraco_phone')||prompt('Introduce el WhatsApp OFICIAL de PeraCo con código de país (solo PeraCo recibirá el pedido):','57');if(phone===null)return;if(phone.replace(/\D/g,'').length<10){alert('Configura el número oficial de WhatsApp de PeraCo antes de enviar.');return}localStorage.setItem('pc_peraco_phone',phone);let id='PC-'+Date.now().toString().slice(-6);let order={id,date:new Date().toLocaleString('es-CO'),restaurant:name,items:rows,total,status:'Pendiente'};orders.unshift(order);cart={};save();let text=`Hola PeraCo. Quiero realizar este pedido:\n\n${msg}\n\nTOTAL: ${money(total)}\nCódigo de pedido: ${id}\nRestaurante: ${name}\nPor favor confirma recepción.`;let url='https://wa.me/'+phone.replace(/\D/g,'')+'?text='+encodeURIComponent(text);window.open(url,'_blank');alert('Pedido '+id+' creado. Se abrirá WhatsApp para enviarlo al proveedor.');show('orders',document.querySelectorAll('.nav button')[1])}
+
+async function openCart() {
+  const rows = cartRows();
+
+  if (!rows.length) {
+    alert('Tu carrito está vacío.');
+    return;
+  }
+
+  const name = prompt(
+    'Nombre del restaurante:',
+    localStorage.getItem('pc_restaurant') || 'Restaurante de prueba'
+  );
+
+  if (name === null || !name.trim()) return;
+
+  const phone = localStorage.getItem('pc_peraco_phone') ||
+    prompt(
+      'Introduce el WhatsApp OFICIAL de PeraCo con código de país:',
+      '57'
+    );
+
+  if (phone === null || phone.replace(/\D/g, '').length < 10) {
+    alert('Configura el WhatsApp oficial de PeraCo.');
+    return;
+  }
+
+  if (!PERACO_SUPABASE_URL || !PERACO_SUPABASE_ANON_KEY) {
+    alert('Falta la configuración de Supabase.');
+    return;
+  }
+
+  const items = rows.map(r => ({
+    sku: String(r.x.sku || r.x.id || ''),
+    quantity: Number(r.q)
+  }));
+
+  if (items.some(i => !i.sku || !Number.isFinite(i.quantity) || i.quantity <= 0)) {
+    alert('Hay productos o cantidades inválidos en el carrito.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${PERACO_SUPABASE_URL.replace(/\/$/, '')}/functions/v1/crear-pedido`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': PERACO_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${PERACO_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          restaurant_code: 'RES-DEMO-001',
+          items
+        })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || result.ok !== true) {
+      console.error('Error creando pedido:', result);
+      alert('No se pudo guardar el pedido en Supabase. No se abrirá WhatsApp. Revisa los registros de crear-pedido.');
+      return;
+    }
+
+    const pedido = result.pedido || {};
+    const id = pedido.codigo || pedido.order_code || pedido.code;
+
+    if (!id) {
+      console.error('Respuesta de crear-pedido:', result);
+      alert('Supabase respondió, pero no encontramos el código del pedido. Revisa la función antes de continuar.');
+      return;
+    }
+
+    localStorage.setItem('pc_restaurant', name.trim());
+    localStorage.setItem('pc_peraco_phone', phone);
+
+    const total = Number(pedido.total ?? result.total);
+    const totalTexto = Number.isFinite(total)
+      ? money(total)
+      : 'Por confirmar';
+
+    const textoProductos = rows
+      .map(r => `• ${r.q} ${r.x.u} ${r.x.n}`)
+      .join('\n');
+
+    const mensaje =
+      `Hola PeraCo. Quiero consultar mi pedido:\n\n${textoProductos}\n\n` +
+      `Código de pedido: ${id}\n` +
+      `Restaurante: ${name.trim()}\n` +
+      `Total registrado: ${totalTexto}\n\n` +
+      'Por favor confirma la recepción.';
+
+    const url =
+      'https://wa.me/' + phone.replace(/\D/g, '') +
+      '?text=' + encodeURIComponent(mensaje);
+
+    const ventana = window.open(url, '_blank');
+
+    if (!ventana) {
+      alert(`Pedido ${id} guardado. El navegador bloqueó la apertura de WhatsApp; abre WhatsApp manualmente y comparte el código ${id}.`);
+    }
+
+    cart = {};
+    save();
+
+    alert(`Pedido ${id} guardado en Supabase.`);
+    show('orders', document.querySelectorAll('.nav button')[1]);
+
+  } catch (error) {
+    console.error('Error de conexión:', error);
+    alert('No se pudo conectar con Supabase. El carrito se conserva y no se enviará el pedido por WhatsApp.');
+  }
+}
 function renderOrders(){if(!orders.length){document.getElementById('orderList').innerHTML='<div class="empty">Aún no tienes pedidos.</div>';return}document.getElementById('orderList').innerHTML='<div class="grid">'+orders.map(o=>`<div class="card"><div class="row"><b>${o.id}</b><span class="status">${o.status}</span></div><p class="muted">${o.date}</p><b>${o.restaurant}</b><hr>${o.items.map(r=>`<div class="row"><span>${r.q} ${r.x.u} ${r.x.n}</span><b>${money(r.sub)}</b></div>`).join('')}<hr><div class="row"><b>Total</b><b>${money(o.total)}</b></div></div>`).join('')+'</div>'}
 function renderProvider(){document.getElementById('providerList').innerHTML=orders.length?'<table class="table"><tr><th>Pedido</th><th>Restaurante</th><th>Productos</th><th>Total</th><th>Estado</th><th>Acción</th></tr>'+orders.map((o,i)=>`<tr><td><b>${o.id}</b><br><span class="small">${o.date}</span></td><td>${o.restaurant}</td><td>${o.items.map(r=>r.q+' '+r.x.u+' '+r.x.n).join('<br>')}</td><td>${money(o.total)}</td><td><span class="status">${o.status}</span></td><td><button class="btn" onclick="advance(${i})">${o.status==='Pendiente'?'Aceptar':o.status==='Aceptado'?'Preparado':o.status==='Preparado'?'Entregado':'✓ Finalizado'}</button></td></tr>`).join('')+'</table>':'<div class="empty">No hay pedidos recibidos.</div>'}
 function advance(i){let s=['Pendiente','Aceptado','Preparado','Entregado','Finalizado'];let k=s.indexOf(orders[i].status);if(k<s.length-1)orders[i].status=s[k+1];save();renderProvider()}
@@ -34,7 +149,7 @@ function addProduct(){let n=document.getElementById('pn').value.trim(),c=documen
 function renderAdmin(){document.getElementById('adminProducts').innerHTML='<table class="table"><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Canal</th><th></th></tr>'+products.map((x,i)=>`<tr><td>${x.e||''} ${x.n}</td><td>${x.c}</td><td>${money(x.p)}/${x.u}</td><td>PeraCo</td><td><button class="btn danger" onclick="delProduct(${i})">Eliminar</button></td></tr>`).join('')+'</table>'}
 function delProduct(i){if(confirm('¿Eliminar producto?')){products.splice(i,1);save();renderAdmin();renderProducts()}}function resetData(){if(confirm('¿Restablecer catálogo y pedidos de prueba?')){localStorage.clear();location.reload()}}function toast(t){let d=document.createElement('div');d.textContent=t;d.style='position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#18352a;color:#fff;padding:12px 16px;border-radius:10px;z-index:20';document.body.appendChild(d);setTimeout(()=>d.remove(),1600)}// CONEXIÓN DE CATÁLOGO PÚBLICO SUPABASE (solo lectura de catalog_public).
 // Pega aquí Project URL y publishable/anon key. Nunca pegues service_role.
-const PERACO_SUPABASE_URL = 'https://vhoyfnjbkytfedtzxhji.supabase.co';
+const PERACO_SUPABASE_URL = 'https://vhoyfnjbkyftedtzxhji.supabase.co';
 const PERACO_SUPABASE_ANON_KEY = 'sb_publishable_wj9o3Ed0iwHq5MU3rl0zMw_1aKLdwv2';
 async function loadPublicCatalog(){
   if(!PERACO_SUPABASE_URL || !PERACO_SUPABASE_ANON_KEY){
