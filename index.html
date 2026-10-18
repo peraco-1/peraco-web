@@ -143,6 +143,61 @@ async function openCart() {
   }
 }
 function renderOrders(){if(!orders.length){document.getElementById('orderList').innerHTML='<div class="empty">Aún no tienes pedidos.</div>';return}document.getElementById('orderList').innerHTML='<div class="grid">'+orders.map(o=>`<div class="card"><div class="row"><b>${o.id}</b><span class="status">${o.status}</span></div><p class="muted">${o.date}</p><b>${o.restaurant}</b><hr>${o.items.map(r=>`<div class="row"><span>${r.q} ${r.x.u} ${r.x.n}</span><b>${money(r.sub)}</b></div>`).join('')}<hr><div class="row"><b>Total</b><b>${money(o.total)}</b></div></div>`).join('')+'</div>'}
+
+
+async function loadOrdersFromSupabase() {
+  if (!PERACO_SUPABASE_URL || !PERACO_SUPABASE_ANON_KEY) {
+    console.warn('Falta la configuración de Supabase.');
+    return;
+  }
+
+  const endpoint =
+    PERACO_SUPABASE_URL.replace(/\/$/, '') +
+    '/functions/v1/consultar-pedidos';
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': PERACO_SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + PERACO_SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({
+        restaurant_code: 'RES-DEMO-001'
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.ok !== true) {
+      console.error('Error consultando pedidos:', result);
+      return;
+    }
+
+    orders = result.pedidos.map(pedido => ({
+      id: pedido.codigo,
+      status: pedido.estado,
+      date: new Date(pedido.creado_en).toLocaleString('es-CO'),
+      restaurant: 'Restaurante de prueba',
+      total: pedido.total,
+      items: pedido.productos.map(producto => ({
+        q: producto.cantidad,
+        x: {
+          u: producto.unidad,
+          n: producto.nombre
+        },
+        sub: producto.cantidad * producto.precio_unitario
+      }))
+    }));
+
+    renderOrders();
+  } catch (error) {
+    console.error('Error cargando pedidos desde Supabase:', error);
+  }
+}
+
+  
 function renderProvider(){document.getElementById('providerList').innerHTML=orders.length?'<table class="table"><tr><th>Pedido</th><th>Restaurante</th><th>Productos</th><th>Total</th><th>Estado</th><th>Acción</th></tr>'+orders.map((o,i)=>`<tr><td><b>${o.id}</b><br><span class="small">${o.date}</span></td><td>${o.restaurant}</td><td>${o.items.map(r=>r.q+' '+r.x.u+' '+r.x.n).join('<br>')}</td><td>${money(o.total)}</td><td><span class="status">${o.status}</span></td><td><button class="btn" onclick="advance(${i})">${o.status==='Pendiente'?'Aceptar':o.status==='Aceptado'?'Preparado':o.status==='Preparado'?'Entregado':'✓ Finalizado'}</button></td></tr>`).join('')+'</table>':'<div class="empty">No hay pedidos recibidos.</div>'}
 function advance(i){let s=['Pendiente','Aceptado','Preparado','Entregado','Finalizado'];let k=s.indexOf(orders[i].status);if(k<s.length-1)orders[i].status=s[k+1];save();renderProvider()}
 function addProduct(){let n=document.getElementById('pn').value.trim(),c=document.getElementById('pc').value.trim()||'Otros',p=Number(document.getElementById('pp').value),u=document.getElementById('pu').value.trim()||'unidad',v='PeraCo',e=document.getElementById('pe').value.trim()||'📦';if(!n||!p){alert('Ingresa al menos nombre y precio.');return}products.push({id:Date.now(),n,c,p,u,v,e});save();['pn','pc','pp','pu','pe'].forEach(id=>document.getElementById(id).value='');renderAdmin();renderProducts()}
