@@ -321,7 +321,74 @@ function renderProvider() {
     '</table>';
 }
 
-function advance(i){let s=['Pendiente','Aceptado','Preparado','Entregado','Finalizado'];let k=s.indexOf(orders[i].status);if(k<s.length-1)orders[i].status=s[k+1];save();renderProvider()}
+
+async function advance(i) {
+  const pedido = orders[i];
+
+  if (!pedido) {
+    alert('No se encontró el pedido.');
+    return;
+  }
+
+  const transiciones = {
+    draft: 'confirmed',
+    confirmed: 'preparing',
+    preparing: 'delivered'
+  };
+
+  const estadosAnteriores = {
+    draft: 'Pendiente',
+    confirmed: 'Aceptado',
+    preparing: 'Preparado',
+    delivered: 'Entregado',
+    cancelled: 'Cancelado'
+  };
+
+  const estadoActual = pedido.status;
+  const nuevoEstado = transiciones[estadoActual];
+
+  if (!nuevoEstado) {
+    alert('Este pedido no tiene una transición disponible.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${PERACO_SUPABASE_URL.replace(/\/$/, '')}/functions/v1/actualizar-estado-pedido`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': PERACO_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${PERACO_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          restaurant_code: 'RES-DEMO-001',
+          order_code: pedido.id,
+          status: nuevoEstado
+        })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || result.ok !== true) {
+      console.error('Error actualizando pedido:', result);
+      alert(result.error || 'No se pudo actualizar el pedido en Supabase.');
+      return;
+    }
+
+    pedido.status = result.status;
+    renderProvider();
+    renderOrders();
+
+    alert(`Pedido actualizado: ${estadosAnteriores[result.status] || result.status}.`);
+  } catch (error) {
+    console.error('Error de conexión:', error);
+    alert('No se pudo conectar con Supabase. El estado no se actualizará localmente.');
+  }
+}
+
 function addProduct(){let n=document.getElementById('pn').value.trim(),c=document.getElementById('pc').value.trim()||'Otros',p=Number(document.getElementById('pp').value),u=document.getElementById('pu').value.trim()||'unidad',v='PeraCo',e=document.getElementById('pe').value.trim()||'📦';if(!n||!p){alert('Ingresa al menos nombre y precio.');return}products.push({id:Date.now(),n,c,p,u,v,e});save();['pn','pc','pp','pu','pe'].forEach(id=>document.getElementById(id).value='');renderAdmin();renderProducts()}
 function renderAdmin(){document.getElementById('adminProducts').innerHTML='<table class="table"><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Canal</th><th></th></tr>'+products.map((x,i)=>`<tr><td>${x.e||''} ${x.n}</td><td>${x.c}</td><td>${money(x.p)}/${x.u}</td><td>PeraCo</td><td><button class="btn danger" onclick="delProduct(${i})">Eliminar</button></td></tr>`).join('')+'</table>'}
 function delProduct(i){if(confirm('¿Eliminar producto?')){products.splice(i,1);save();renderAdmin();renderProducts()}}function resetData(){if(confirm('¿Restablecer catálogo y pedidos de prueba?')){localStorage.clear();location.reload()}}function toast(t){let d=document.createElement('div');d.textContent=t;d.style='position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#18352a;color:#fff;padding:12px 16px;border-radius:10px;z-index:20';document.body.appendChild(d);setTimeout(()=>d.remove(),1600)}// CONEXIÓN DE CATÁLOGO PÚBLICO SUPABASE (solo lectura de catalog_public).
