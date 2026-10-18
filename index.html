@@ -186,7 +186,21 @@ function renderOrders() {
       <div class="card">
         <div class="row">
           <b>${o.id}</b>
-          <span class="status">${o.status}</span>
+          <span class="status">${
+  ({
+    draft: 'Pendiente de confirmación',
+    pending: 'Pendiente de confirmación',
+    Pendiente: 'Pendiente de confirmación',
+    confirmed: 'Confirmado',
+    Aceptado: 'Aceptado',
+    preparing: 'En preparación',
+    Preparado: 'Preparado',
+    delivered: 'Entregado',
+    Entregado: 'Entregado',
+    cancelled: 'Cancelado',
+    Finalizado: 'Finalizado'
+  })[o.status] || o.status
+}</span>
         </div>
         <p class="muted">${o.date}</p>
         <b>${o.restaurant}</b>
